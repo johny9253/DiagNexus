@@ -2,16 +2,18 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useAuth } from "@/contexts/auth-context"
 import { apiService } from "@/lib/api"
-import { Upload, Loader2, CheckCircle, FileText, Calendar, Shield } from "lucide-react"
+import type { Report } from "@/types"
+import { Upload, Loader2, CheckCircle, FileText, Calendar, Shield, Download, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 export default function PatientView() {
@@ -22,6 +24,40 @@ export default function PatientView() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [error, setError] = useState("")
+
+  // Real-time reports state
+  const [myReports, setMyReports] = useState<Report[]>([])
+  const [loadingReports, setLoadingReports] = useState(true)
+  const [reportsError, setReportsError] = useState("")
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetchMyReports()
+  }, [])
+
+  const fetchMyReports = async () => {
+    if (!user) return
+
+    setLoadingReports(true)
+    setReportsError("")
+
+    try {
+      console.log("[PATIENT VIEW] Fetching reports for patient:", user.UserId)
+      const response = await apiService.getReports(user.UserId)
+
+      if (response.success && response.data) {
+        console.log("[PATIENT VIEW] Received", response.data.length, "reports")
+        setMyReports(response.data)
+      } else {
+        setReportsError(response.message || "Failed to fetch reports")
+      }
+    } catch (error) {
+      console.error("[PATIENT VIEW] Error fetching reports:", error)
+      setReportsError("Failed to fetch your reports")
+    } finally {
+      setLoadingReports(false)
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -55,24 +91,81 @@ export default function PatientView() {
       formData.append("comments", comments.trim())
       formData.append("userId", user.UserId.toString())
 
+      console.log("[PATIENT VIEW] Uploading report:", reportName)
       const response = await apiService.uploadReport(formData)
 
       if (response.success) {
+        console.log("[PATIENT VIEW] Upload successful")
         setUploadSuccess(true)
         setFile(null)
         setReportName("")
         setComments("")
+
         // Reset file input
         const fileInput = document.getElementById("file") as HTMLInputElement
         if (fileInput) fileInput.value = ""
+
+        // Refresh reports list to show new upload
+        await fetchMyReports()
       } else {
         setError(response.message || "Upload failed")
       }
     } catch (error) {
+      console.error("[PATIENT VIEW] Upload error:", error)
       setError("Upload failed. Please try again.")
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const handleDownload = async (reportId: number, reportName: string) => {
+    setDownloadingId(reportId)
+
+    try {
+      console.log(`[PATIENT VIEW] Downloading report ${reportId}: ${reportName}`)
+      const blob = await apiService.downloadReport(reportId)
+
+      if (blob) {
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${reportName.replace(/[^a-zA-Z0-9.-]/g, "_")}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        console.log(`[PATIENT VIEW] Download successful`)
+      } else {
+        setError("Failed to download report")
+      }
+    } catch (error) {
+      console.error(`[PATIENT VIEW] Download error:`, error)
+      setError("Failed to download report")
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  const getStatusBadge = (report: Report) => {
+    // Determine status based on when it was last updated and by whom
+    const isRecentUpload = new Date(report.CreatedAt || report.UpdatedDate).getTime() > Date.now() - 24 * 60 * 60 * 1000
+    const wasUpdatedByDoctor = report.UpdatedBy !== report.UserId
+
+    if (isRecentUpload && !wasUpdatedByDoctor) {
+      return <Badge className="bg-warning-100 text-warning-800 border-warning-200">Pending Review</Badge>
+    } else if (wasUpdatedByDoctor) {
+      return <Badge className="bg-success-100 text-success-800 border-success-200">Reviewed</Badge>
+    } else {
+      return <Badge className="bg-clinical-100 text-clinical-800 border-clinical-200">Uploaded</Badge>
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
   return (
@@ -141,7 +234,9 @@ export default function PatientView() {
               {file && (
                 <div className="flex items-center space-x-2 text-sm text-success-700 bg-success-50 p-2 rounded">
                   <CheckCircle className="h-4 w-4" />
-                  <span>Selected: {file.name}</span>
+                  <span>
+                    Selected: {file.name} ({formatFileSize(file.size)})
+                  </span>
                 </div>
               )}
             </div>
@@ -171,8 +266,8 @@ export default function PatientView() {
               <Alert className="border-success-200 bg-success-50">
                 <CheckCircle className="h-4 w-4 text-success-600" />
                 <AlertDescription className="text-success-700">
-                  <strong>Upload successful!</strong> Your medical report has been securely uploaded to DiagNexus and is
-                  now available for your healthcare provider to review.
+                  <strong>Upload successful!</strong> Your medical report has been securely uploaded to AWS S3 and saved
+                  to the database. Your healthcare provider can now access and download the report.
                 </AlertDescription>
               </Alert>
             )}
@@ -198,50 +293,102 @@ export default function PatientView() {
         </CardContent>
       </Card>
 
-      {/* My Reports */}
+      {/* My Reports - Real-time data */}
       <Card className="healthcare-card">
         <CardHeader>
-          <CardTitle className="text-clinical-900 flex items-center">
-            <FileText className="h-5 w-5 mr-2 text-primary-600" />
-            My Medical Reports
-          </CardTitle>
-          <CardDescription className="text-clinical-600">
-            Your uploaded medical reports and their status
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-clinical-900 flex items-center">
+                <FileText className="h-5 w-5 mr-2 text-primary-600" />
+                My Medical Reports ({myReports.length})
+              </CardTitle>
+              <CardDescription className="text-clinical-600">
+                Your uploaded medical reports and their current status
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchMyReports}
+              disabled={loadingReports}
+              className="flex items-center space-x-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loadingReports ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-6">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-4 border border-clinical-200 rounded-lg bg-clinical-50">
-              <div className="flex items-center space-x-3">
-                <div className="bg-primary-100 p-2 rounded">
-                  <FileText className="h-4 w-4 text-primary-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-clinical-900">Blood Test Report</p>
-                  <div className="flex items-center text-sm text-clinical-600">
-                    <Calendar className="h-3 w-3 mr-1" />
-                    Uploaded on Jun 20, 2025
-                  </div>
-                </div>
-              </div>
-              <Badge className="bg-success-100 text-success-800 border-success-200">Reviewed</Badge>
+          {loadingReports ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 text-primary-600 mx-auto mb-4 animate-spin" />
+              <p className="text-clinical-600">Loading your reports...</p>
             </div>
-            <div className="flex items-center justify-between p-4 border border-clinical-200 rounded-lg bg-clinical-50">
-              <div className="flex items-center space-x-3">
-                <div className="bg-secondary-100 p-2 rounded">
-                  <FileText className="h-4 w-4 text-secondary-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-clinical-900">X-ray Report</p>
-                  <div className="flex items-center text-sm text-clinical-600">
-                    <Calendar className="h-3 w-3 mr-1" />
-                    Uploaded on Jun 21, 2025
-                  </div>
-                </div>
-              </div>
-              <Badge className="bg-warning-100 text-warning-800 border-warning-200">Pending Review</Badge>
+          ) : reportsError ? (
+            <Alert className="border-error-200 bg-error-50">
+              <AlertDescription className="text-error-700">{reportsError}</AlertDescription>
+            </Alert>
+          ) : myReports.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 text-clinical-300 mx-auto mb-4" />
+              <p className="text-clinical-500 text-lg">No reports uploaded yet</p>
+              <p className="text-clinical-400 text-sm">Upload your first medical report using the form above</p>
             </div>
-          </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-clinical-50">
+                    <TableHead className="font-semibold text-clinical-700">Report Name</TableHead>
+                    <TableHead className="font-semibold text-clinical-700">Upload Date</TableHead>
+                    <TableHead className="font-semibold text-clinical-700">File Size</TableHead>
+                    <TableHead className="font-semibold text-clinical-700">Status</TableHead>
+                    <TableHead className="font-semibold text-clinical-700">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {myReports.map((report) => (
+                    <TableRow key={report.ReportId} className="hover:bg-clinical-50">
+                      <TableCell className="font-medium text-clinical-900">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="h-4 w-4 text-primary-600" />
+                          <div>
+                            <span>{report.Name}</span>
+                            {report.Comments && <p className="text-xs text-clinical-500 mt-1">{report.Comments}</p>}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="h-4 w-4 text-clinical-400" />
+                          <span className="text-clinical-600">
+                            {new Date(report.CreatedAt || report.UpdatedDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-clinical-600">
+                          {report.FileSize ? formatFileSize(report.FileSize) : "N/A"}
+                        </span>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(report)}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          onClick={() => handleDownload(report.ReportId, report.Name)}
+                          disabled={downloadingId === report.ReportId}
+                          className="healthcare-button-accent"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          {downloadingId === report.ReportId ? "Downloading..." : "Download"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

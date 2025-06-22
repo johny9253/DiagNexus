@@ -12,25 +12,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check for stored user session
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
+    try {
+      const storedUser = localStorage.getItem("user")
+      const storedToken = localStorage.getItem("auth-token")
+
+      console.log("[AUTH CONTEXT] Checking stored session:", {
+        hasUser: !!storedUser,
+        hasToken: !!storedToken,
+      })
+
+      if (storedUser && storedToken) {
+        const parsedUser = JSON.parse(storedUser)
+        console.log("[AUTH CONTEXT] Restored user session:", parsedUser.Name)
+        setUser(parsedUser)
+      }
+    } catch (error) {
+      console.error("[AUTH CONTEXT] Failed to restore session:", error)
+      // Clear corrupted data
+      localStorage.removeItem("user")
+      localStorage.removeItem("auth-token")
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
 
   const login = async (email: string, password: string): Promise<boolean> => {
+    console.log("[AUTH CONTEXT] Login attempt for:", email)
     setLoading(true)
+
     try {
       const response = await apiService.login(email, password)
+      console.log("[AUTH CONTEXT] Login response:", {
+        success: response.success,
+        message: response.message,
+      })
+
       if (response.success && response.data) {
+        console.log("[AUTH CONTEXT] Login successful, storing user data")
         setUser(response.data)
         localStorage.setItem("user", JSON.stringify(response.data))
         return true
+      } else {
+        console.log("[AUTH CONTEXT] Login failed:", response.message)
+        return false
       }
-      return false
     } catch (error) {
-      console.error("Login failed:", error)
+      console.error("[AUTH CONTEXT] Login error:", error)
       return false
     } finally {
       setLoading(false)
@@ -38,8 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    console.log("[AUTH CONTEXT] Logging out")
     setUser(null)
     localStorage.removeItem("user")
+    localStorage.removeItem("auth-token")
   }
 
   return <AuthContext.Provider value={{ user, login, logout, loading }}>{children}</AuthContext.Provider>

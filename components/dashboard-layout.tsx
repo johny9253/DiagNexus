@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/auth-context"
 import { LogOut, Heart, Users, Upload, FileText, Activity, Zap } from "lucide-react"
 import MockDataBanner from "@/components/mock-data-banner"
+import DatabaseStatusBanner from "@/components/database-status-banner"
+import S3StatusBanner from "@/components/s3-status-banner"
+import ProductionStatusIndicator from "@/components/production-status-indicator"
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -82,7 +85,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Status Banners - Environment Aware */}
+        <ProductionStatusIndicator />
         <MockDataBanner />
+        <DatabaseStatusBanner />
+        <S3StatusBanner />
+
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar */}
           <aside className="lg:w-64">

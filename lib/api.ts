@@ -1,225 +1,217 @@
 import type { User, Report, ApiResponse } from "@/types"
 
-const API_BASE_URL = "http://localhost:3000"
-
-// Mock data based on the provided models
-const MOCK_USERS: User[] = [
-  {
-    UserId: 1,
-    Role: "Admin",
-    Name: "Alice Johnson",
-    Mail: "alice@example.com",
-    Password: "admin123",
-    UpdatedBy: null,
-    UpdatedDate: "2025-06-20T12:00:00Z",
-    IsActive: true,
-  },
-  {
-    UserId: 2,
-    Role: "Doctor",
-    Name: "Dr. Smith",
-    Mail: "smith@hospital.com",
-    Password: "docpass",
-    UpdatedBy: 1,
-    UpdatedDate: "2025-06-20T12:30:00Z",
-    IsActive: true,
-  },
-  {
-    UserId: 3,
-    Role: "Patient",
-    Name: "John Doe",
-    Mail: "john.doe@example.com",
-    Password: "patientpass",
-    UpdatedBy: 2,
-    UpdatedDate: "2025-06-20T13:00:00Z",
-    IsActive: true,
-  },
-]
-
-const MOCK_REPORTS: Report[] = [
-  {
-    ReportId: 101,
-    UserId: 3,
-    Name: "Blood Test Report",
-    Path: "s3://bucket/reports/bloodtest_john.pdf",
-    UpdatedBy: 2,
-    UpdatedDate: "2025-06-20T15:00:00Z",
-    IsActive: true,
-    PatientName: "John Doe",
-  },
-  {
-    ReportId: 102,
-    UserId: 3,
-    Name: "X-ray Report",
-    Path: "s3://bucket/reports/xray_john.pdf",
-    UpdatedBy: 2,
-    UpdatedDate: "2025-06-21T10:00:00Z",
-    IsActive: true,
-    PatientName: "John Doe",
-  },
-]
-
 class ApiService {
-  private useMockData = true // Set to false when real API is available
-
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    if (this.useMockData) {
-      // Return mock data instead of making real API calls
-      return this.handleMockRequest<T>(endpoint, options)
+  private getAuthToken(): string | null {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("auth-token")
     }
+    return null
+  }
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        headers: {
-          "Content-Type": "application/json",
-          ...options.headers,
-        },
-        ...options,
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return { success: true, data }
-    } catch (error) {
-      console.error("API request failed:", error)
-      // Fallback to mock data if real API fails
-      return this.handleMockRequest<T>(endpoint, options)
+  private setAuthToken(token: string): void {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("auth-token", token)
     }
   }
 
-  private async handleMockRequest<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
+  private removeAuthToken(): void {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("auth-token")
+    }
+  }
 
-    const method = options.method || "GET"
-
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     try {
-      if (endpoint === "/auth/login" && method === "POST") {
-        const body = JSON.parse(options.body as string)
-        const user = MOCK_USERS.find((u) => u.Mail === body.email && u.Password === body.password)
-        if (user) {
-          return { success: true, data: user as T }
+      console.log(`[API] Making request to: ${endpoint}`)
+
+      const token = this.getAuthToken()
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...options.headers,
+      }
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      console.log(`[API] Request headers:`, { ...headers, Authorization: token ? "Bearer [REDACTED]" : "None" })
+
+      const response = await fetch(endpoint, {
+        headers,
+        ...options,
+      })
+
+      console.log(`[API] Response status: ${response.status} ${response.statusText}`)
+      console.log(`[API] Response content-type:`, response.headers.get("content-type"))
+
+      // Check if response is JSON
+      const contentType = response.headers.get("content-type")
+      const isJson = contentType && contentType.includes("application/json")
+
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+
+        if (isJson) {
+          try {
+            const errorData = await response.json()
+            console.log(`[API] JSON error response:`, errorData)
+            errorMessage = errorData.message || errorMessage
+          } catch (parseError) {
+            console.error(`[API] Failed to parse JSON error response:`, parseError)
+          }
         } else {
-          return { success: false, message: "Invalid credentials" }
+          // Handle non-JSON error responses (like HTML error pages)
+          try {
+            const textResponse = await response.text()
+            console.log(`[API] Non-JSON error response (first 200 chars):`, textResponse.substring(0, 200))
+
+            // Try to extract meaningful error from HTML
+            if (textResponse.includes("Internal Server Error")) {
+              errorMessage = "Internal server error - please try again"
+            } else if (textResponse.includes("404")) {
+              errorMessage = "API endpoint not found"
+            } else if (textResponse.includes("500")) {
+              errorMessage = "Server error - please try again later"
+            }
+          } catch (textError) {
+            console.error(`[API] Failed to read error response as text:`, textError)
+          }
         }
+
+        throw new Error(errorMessage)
       }
 
-      if (endpoint === "/users" && method === "GET") {
-        return { success: true, data: MOCK_USERS as T }
-      }
+      // Handle successful responses
+      if (isJson) {
+        try {
+          const data = await response.json()
+          console.log(`[API] Success JSON response:`, { success: data.success, hasData: !!data.data })
 
-      if (endpoint === "/reports" && method === "GET") {
-        return { success: true, data: MOCK_REPORTS as T }
-      }
+          // Handle auth token from login
+          if (endpoint === "/api/auth/login" && response.headers.get("X-Auth-Token")) {
+            const authToken = response.headers.get("X-Auth-Token")!
+            this.setAuthToken(authToken)
+            console.log(`[API] Auth token stored`)
+          }
 
-      if (endpoint.startsWith("/reports?userId=") && method === "GET") {
-        const userId = Number.parseInt(endpoint.split("userId=")[1])
-        const userReports = MOCK_REPORTS.filter((r) => r.UserId === userId)
-        return { success: true, data: userReports as T }
-      }
-
-      if (endpoint === "/reports/upload" && method === "POST") {
-        // Simulate successful upload
-        const newReport: Report = {
-          ReportId: Date.now(),
-          UserId: 3, // Default to patient user
-          Name: "New Report",
-          Path: `s3://bucket/reports/report_${Date.now()}.pdf`,
-          UpdatedBy: 3,
-          UpdatedDate: new Date().toISOString(),
-          IsActive: true,
-          PatientName: "John Doe",
+          return data
+        } catch (parseError) {
+          console.error(`[API] Failed to parse success JSON response:`, parseError)
+          throw new Error("Invalid JSON response format")
         }
-        MOCK_REPORTS.push(newReport)
-        return { success: true, data: newReport as T }
+      } else {
+        // Non-JSON successful response
+        console.warn(`[API] Non-JSON successful response received`)
+        return {
+          success: true,
+          message: "Request completed successfully",
+        } as ApiResponse<T>
       }
-
-      return { success: false, message: "Endpoint not found" }
     } catch (error) {
-      return { success: false, message: "Mock API error" }
+      console.error(`[API] Request failed for ${endpoint}:`, error)
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown network error",
+      }
     }
   }
 
   // Authentication
   async login(email: string, password: string): Promise<ApiResponse<User>> {
-    return this.request<User>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    })
+    console.log(`[API] Attempting login for:`, email)
+
+    if (!email || !password) {
+      return {
+        success: false,
+        message: "Email and password are required",
+      }
+    }
+
+    try {
+      const result = await this.request<User>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim(), password }),
+      })
+
+      console.log(`[API] Login result:`, { success: result.success, message: result.message })
+      return result
+    } catch (error) {
+      console.error(`[API] Login request failed:`, error)
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Login request failed",
+      }
+    }
+  }
+
+  async logout(): Promise<ApiResponse<void>> {
+    console.log(`[API] Logging out`)
+    this.removeAuthToken()
+    return { success: true, message: "Logged out successfully" }
   }
 
   // Users
   async getUsers(): Promise<ApiResponse<User[]>> {
-    return this.request<User[]>("/users")
+    return this.request<User[]>("/api/users")
   }
 
   async createUser(user: Omit<User, "UserId">): Promise<ApiResponse<User>> {
-    return this.request<User>("/users", {
+    return this.request<User>("/api/users", {
       method: "POST",
       body: JSON.stringify(user),
     })
   }
 
   async updateUser(userId: number, user: Partial<User>): Promise<ApiResponse<User>> {
-    return this.request<User>(`/users/${userId}`, {
+    return this.request<User>(`/api/users/${userId}`, {
       method: "PUT",
       body: JSON.stringify(user),
     })
   }
 
   async deleteUser(userId: number): Promise<ApiResponse<void>> {
-    return this.request<void>(`/users/${userId}`, {
+    return this.request<void>(`/api/users/${userId}`, {
       method: "DELETE",
     })
   }
 
   // Reports
   async getReports(userId?: number): Promise<ApiResponse<Report[]>> {
-    const endpoint = userId ? `/reports?userId=${userId}` : "/reports"
+    const endpoint = userId ? `/api/reports?userId=${userId}` : "/api/reports"
     return this.request<Report[]>(endpoint)
   }
 
   async uploadReport(formData: FormData): Promise<ApiResponse<Report>> {
-    // Extract form data for mock processing
-    const name = formData.get("name") as string
-    const userId = Number.parseInt(formData.get("userId") as string)
-    const comments = formData.get("comments") as string
+    try {
+      console.log(`[API] Uploading report...`)
 
-    if (this.useMockData) {
-      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulate upload time
+      const token = this.getAuthToken()
+      const headers: Record<string, string> = {}
 
-      const newReport: Report = {
-        ReportId: Date.now(),
-        UserId: userId,
-        Name: name,
-        Path: `s3://bucket/reports/${name.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}.pdf`,
-        Comments: comments,
-        UpdatedBy: userId,
-        UpdatedDate: new Date().toISOString(),
-        IsActive: true,
-        PatientName: MOCK_USERS.find((u) => u.UserId === userId)?.Name || "Unknown Patient",
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
       }
 
-      MOCK_REPORTS.push(newReport)
-      return { success: true, data: newReport }
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/reports/upload`, {
+      const response = await fetch("/api/reports/upload", {
         method: "POST",
+        headers,
         body: formData,
       })
 
+      console.log(`[API] Upload response status: ${response.status}`)
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: `Upload failed with status ${response.status}` }))
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
-      return { success: true, data }
+      const result = await response.json()
+      console.log(`[API] Upload successful`)
+      return result
     } catch (error) {
+      console.error(`[API] Upload failed:`, error)
       return {
         success: false,
         message: error instanceof Error ? error.message : "Upload failed",
@@ -228,29 +220,33 @@ class ApiService {
   }
 
   async downloadReport(reportId: number): Promise<Blob | null> {
-    if (this.useMockData) {
-      // Create a mock PDF blob for download
-      const pdfContent = `Mock PDF content for report ${reportId}`
-      return new Blob([pdfContent], { type: "application/pdf" })
-    }
-
     try {
-      const response = await fetch(`${API_BASE_URL}/reports/${reportId}/download`)
+      console.log(`[API] Downloading report ${reportId}...`)
+
+      const token = this.getAuthToken()
+      const headers: Record<string, string> = {}
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      const response = await fetch(`/api/reports/${reportId}/download`, {
+        headers,
+      })
+
+      console.log(`[API] Download response status: ${response.status}`)
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-      return await response.blob()
-    } catch (error) {
-      console.error("Download failed:", error)
-      // Return mock blob as fallback
-      const pdfContent = `Mock PDF content for report ${reportId}`
-      return new Blob([pdfContent], { type: "application/pdf" })
-    }
-  }
 
-  // Method to toggle between mock and real API
-  setUseMockData(useMock: boolean) {
-    this.useMockData = useMock
+      const blob = await response.blob()
+      console.log(`[API] Download successful`)
+      return blob
+    } catch (error) {
+      console.error(`[API] Download failed:`, error)
+      return null
+    }
   }
 }
 

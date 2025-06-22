@@ -19,6 +19,10 @@ export interface Report {
   UpdatedDate: string
   IsActive: boolean
   PatientName?: string
+  FileSize?: number
+  FileType?: string
+  UpdatedByName?: string
+  CreatedAt?: string
 }
 
 export interface AuthContextType {
