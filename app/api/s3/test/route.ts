@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       success: testResult.success,
       message: testResult.message,
       timestamp: new Date().toISOString(),
-      bucket: process.env.AWS_S3_BUCKET || "diagnexus-medical-reports",
+      bucket: process.env.AWS_S3_BUCKET || "diagnexus-medi-reports",
       region: process.env.AWS_REGION || "us-east-1",
       mode: "production",
       credentials: {

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
-      bucket: process.env.AWS_S3_BUCKET || "diagnexus-medical-reports",
+      bucket: process.env.AWS_S3_BUCKET || "diagnexus-medi-reports",
       region: process.env.AWS_REGION || "us-east-1",
       connection: connectionTest,
       allFiles: filesList,

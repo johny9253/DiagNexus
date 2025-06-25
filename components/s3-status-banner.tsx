@@ -138,7 +138,7 @@ export default function S3StatusBanner() {
             {s3Status.success && config.features.showTechnicalDetails && (
               <>
                 <br />
-                <span className="text-sm">Bucket: diagnexus-medical-reports | Region: us-east-1</span>
+                <span className="text-sm">Bucket: diagnexus-medi-reports | Region: us-east-1</span>
               </>
             )}
           </AlertDescription>

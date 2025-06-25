@@ -141,7 +141,7 @@ async function setupProduction() {
     console.log(`Users created: ${userCount.rows[0].count}`)
     console.log(`Reports created: ${reportCount.rows[0].count}`)
     console.log("Database: AWS RDS PostgreSQL")
-    console.log("Storage: AWS S3 (diagnexus-medical-reports)")
+    console.log("Storage: AWS S3 (diagnexus-medi-reports)")
     console.log("Security: bcrypt password hashing (cost: 12)")
     console.log("Indexes: Optimized for production queries")
 
