@@ -56,7 +56,7 @@ export default function LoginForm() {
             DiagNexus
           </h1>
           <p className="text-clinical-600 mt-2 font-medium">Advanced Medical Report Management</p>
-          <p className="text-clinical-500 text-sm">Connecting Healthcare Through Technology</p>
+          <p className="text-clinical-500 text-sm">Connecting Healthcare Through Technology..</p>
         </div>
 
         <Card className="healthcare-card shadow-lg">
