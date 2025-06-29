@@ -1,5 +1,6 @@
 import { Pool } from "pg"
 import bcrypt from "bcryptjs"
+import { console } from "node:inspector/promises"
 
 export interface DatabaseUser {
   user_id: number
@@ -56,7 +57,7 @@ async function initializePool(): Promise<Pool | null> {
   try {
     const databaseUrl =
       process.env.DATABASE_URL ||
-      "postgresql://postgres:Prem2354@diagnexus.cez8sqams4v9.us-east-1.rds.amazonaws.com:5432/diagnexus"
+      "postgresql://postgres:Prem2354@diagnexus.coxewow42tho.us-east-1.rds.amazonaws.com:5432/diagnexus"
 
     console.log("[DB] Initializing new connection pool...")
 
@@ -114,6 +115,7 @@ async function testConnectionWithRetry(testPool: Pool, maxRetries = 3): Promise<
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[DB] Testing connection (attempt ${attempt}/${maxRetries})...`)
+      console.log('Test done',pool)
 
       const testClient = await Promise.race([
         testPool.connect(),
@@ -337,7 +339,7 @@ export function getDatabaseStatus() {
   return {
     connected: isConnected,
     error: connectionError,
-    host: "diagnexus.cez8sqams4v9.us-east-1.rds.amazonaws.com",
+    host: "diagnexus.coxewow42tho.us-east-1.rds.amazonaws.com",
     database: "diagnexus",
     initializing: isInitializing,
     pool: pool

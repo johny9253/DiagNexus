@@ -12,7 +12,7 @@ const s3Config: S3Config = {
   accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test",
   region: process.env.AWS_REGION || "test",
-  bucketName: process.env.AWS_S3_BUCKET || "test",
+  bucketName: process.env.AWS_S3_BUCKET || "diagnexus-medi-report",
 }
 
 export class S3Service {

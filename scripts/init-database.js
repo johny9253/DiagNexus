@@ -6,7 +6,7 @@ async function initializeDatabase() {
     host: "localhost",
     database: "postgres",
     user: "postgres",
-    password: "Prem",
+    password: "Prem@2354",
     port: 5432,
   })
 
@@ -31,7 +31,7 @@ async function initializeDatabase() {
       host: "localhost",
       database: "diagnexus",
       user: "postgres",
-      password: "Prem",
+      password: "Prem@2354",
       port: 5432,
     })
 
