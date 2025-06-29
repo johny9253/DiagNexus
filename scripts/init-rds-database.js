@@ -1,45 +1,52 @@
 const { Pool } = require("pg")
 const bcrypt = require("bcryptjs")
 
+const adminPool = new Pool({
+  host: "diagnexusdb.coxewow42tho.us-east-1.rds.amazonaws.com",
+  database: "postgres",
+  user: "postgres",
+  password: "Prem2354",
+  port: 5432,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 5000,
+})
+
 async function initializeRDSDatabase() {
-  const adminPool = new Pool({
-    host: "diagnexus.coxewow42tho.us-east-1.rds.amazonaws.com",
-    database: "postgres", // start with default
-    user: "postgres",
-    password: "Prem2354",
-    port: 5432,
-    ssl: { rejectUnauthorized: false },
-  })
-
   try {
-    console.log("🔍 Checking if 'diagnexus' database exists...")
+    console.log("🔧 Connecting to admin DB...")
 
-    const check = await adminPool.query("SELECT 1 FROM pg_database WHERE datname = 'diagnexus'")
+    const adminClient = await adminPool.connect()
+    console.log("✅ Connected to 'postgres' database on RDS")
+
+    console.log("🔍 Checking if 'diagnexus' database exists...")
+    const check = await adminClient.query("SELECT 1 FROM pg_database WHERE datname = 'diagnexus'")
     if (check.rows.length === 0) {
-      console.log("📦 Creating 'diagnexus' database on RDS...")
-      await adminPool.query("CREATE DATABASE diagnexus")
-      console.log("✅ Database 'diagnexus' created successfully")
+      console.log("📦 Creating 'diagnexus' database...")
+      await adminClient.query("CREATE DATABASE diagnexus")
+      console.log("✅ 'diagnexus' database created.")
     } else {
-      console.log("✅ Database 'diagnexus' already exists")
+      console.log("✅ 'diagnexus' database already exists.")
     }
 
+    adminClient.release()
     await adminPool.end()
 
-    // Now connect to diagnexus database
-    const pool = new Pool({
-      host: "diagnexus.coxewow42tho.us-east-1.rds.amazonaws.com",
+    // Now connect to diagnexus DB
+    const appPool = new Pool({
+      host: "diagnexusdb.coxewow42tho.us-east-1.rds.amazonaws.com",
       database: "diagnexus",
       user: "postgres",
       password: "Prem2354",
       port: 5432,
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
     })
 
-    const client = await pool.connect()
-    console.log("🔧 Connected to RDS 'diagnexus'")
+    const client = await appPool.connect()
+    console.log("🔧 Connected to 'diagnexus' database")
 
     // Create tables
-    console.log("📐 Creating tables if not exist...")
+    console.log("📐 Creating tables...")
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         user_id SERIAL PRIMARY KEY,
@@ -75,7 +82,7 @@ async function initializeRDSDatabase() {
       CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id);
     `)
 
-    // Seed data if empty
+    // Seed if empty
     const result = await client.query("SELECT COUNT(*) FROM users")
     if (parseInt(result.rows[0].count) === 0) {
       console.log("🌱 Seeding demo users and reports...")
@@ -100,17 +107,17 @@ async function initializeRDSDatabase() {
       await client.query("SELECT setval('users_user_id_seq', (SELECT MAX(user_id) FROM users))")
       await client.query("SELECT setval('reports_report_id_seq', (SELECT MAX(report_id) FROM reports))")
 
-      console.log("✅ Demo data inserted")
+      console.log("✅ Demo data seeded.")
     } else {
-      console.log("📊 Users already exist, skipping seeding")
+      console.log("📊 Users already exist. Skipping seeding.")
     }
 
     client.release()
-    await pool.end()
+    await appPool.end()
 
-    console.log("🚀 RDS 'diagnexus' setup completed")
-  } catch (error) {
-    console.error("❌ RDS setup failed:", error)
+    console.log("🚀 RDS 'diagnexus' setup completed.")
+  } catch (err) {
+    console.error("❌ RDS setup failed:", err)
     process.exit(1)
   }
 }

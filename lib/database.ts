@@ -57,7 +57,7 @@ async function initializePool(): Promise<Pool | null> {
   try {
     const databaseUrl =
       process.env.DATABASE_URL ||
-      "postgresql://postgres:Prem2354@diagnexus.coxewow42tho.us-east-1.rds.amazonaws.com:5432/diagnexus"
+      "postgresql://postgres:Prem2354@diagnexusdb.coxewow42tho.us-east-1.rds.amazonaws.com:5432/diagnexus"
 
     console.log("[DB] Initializing new connection pool...")
 
